@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+data.db
+sessions/*
+!sessions/.gitkeep
+
+# Docker
+*.tar
+
+# Superpowers system files
+.superpowers/
+
+# Environment
+.env

@@ -48,7 +48,7 @@ async def send_message(
 
     # Run agent
     full_prompt = prompt + file_info
-    reply = await run_agent(session.container_id, full_prompt)
+    reply = await run_agent(session.container_id, full_prompt, session_id)
 
     # Save assistant message
     add_message(session_id, "assistant", reply)

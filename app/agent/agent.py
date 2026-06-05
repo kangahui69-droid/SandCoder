@@ -4,7 +4,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIChatModel
 from .tools import (
     tool_execute_code, tool_read_file, tool_write_file, tool_install_package,
-    set_container,
+    set_container, set_session,
 )
 
 SYSTEM_PROMPT = """You are a coding assistant with access to a sandbox environment.
@@ -56,9 +56,11 @@ def get_agent() -> Agent:
     return _agent
 
 
-async def run_agent(container_id: str, user_prompt: str) -> str:
+async def run_agent(container_id: str, user_prompt: str, session_id: str | None = None) -> str:
     """Run the agent for a session and return the final response."""
     set_container(container_id)
+    if session_id:
+        set_session(session_id)
     agent = get_agent()
     result = await agent.run(user_prompt)
     return result.output

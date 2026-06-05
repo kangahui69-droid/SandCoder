@@ -63,6 +63,15 @@ def touch_session(session_id: str):
         )
 
 
+def clear_container(session_id: str):
+    """Clear the container_id for a session (e.g., after idle timeout cleanup)."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE sessions SET container_id = NULL WHERE session_id = ?",
+            (session_id,),
+        )
+
+
 def add_message(session_id: str, role: str, content: str, msg_type: str = "text") -> Message:
     with get_connection() as conn:
         conn.execute("BEGIN")

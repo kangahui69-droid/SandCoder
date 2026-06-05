@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -44,10 +45,32 @@ async def lifespan(app: FastAPI):
     from app.agent.tools import init_executor
     init_executor()
 
+    # Start idle container cleanup background task
+    from app.sandbox.manager import cleanup_idle_containers, CLEANUP_INTERVAL
+
+    cleanup_task: asyncio.Task | None = None
+
+    async def _cleanup_loop():
+        while True:
+            await asyncio.sleep(CLEANUP_INTERVAL)
+            try:
+                await asyncio.to_thread(cleanup_idle_containers)
+            except Exception:
+                logger.warning("Idle cleanup iteration failed", exc_info=True)
+
+    cleanup_task = asyncio.create_task(_cleanup_loop())
+
     logger.info("SandCoder ready")
     yield
-    # Shutdown: cleanup executor and Docker containers
+    # Shutdown: cancel cleanup task, stop containers, shutdown executor
     logger.info("Shutting down...")
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+
     from app.agent.tools import shutdown_executor
     from app.sandbox.manager import stop_container
     for s in list_sessions():

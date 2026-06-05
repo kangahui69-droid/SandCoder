@@ -2,6 +2,7 @@ import docker
 import os
 import logging
 import pathlib
+from datetime import datetime, UTC, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,7 @@ NETWORK_DISABLED = True
 MEMORY_LIMIT = "256m"
 CPU_LIMIT = 1.0
 IDLE_TIMEOUT = 30 * 60  # 30 minutes
+CLEANUP_INTERVAL = 5 * 60  # check every 5 minutes
 
 _client = None
 
@@ -105,3 +107,30 @@ def cleanup_stale(active_ids: set[str]):
                 pass
             except Exception as exc:
                 logger.warning("Failed to clean up stale container %s: %s", container.id, exc)
+
+
+def cleanup_idle_containers():
+    """Stop containers for sessions that have been idle longer than IDLE_TIMEOUT."""
+    from app.db.repository import list_sessions, clear_container
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=IDLE_TIMEOUT)
+    sessions = list_sessions()
+
+    for s in sessions:
+        if not s.container_id:
+            continue
+        try:
+            last_active = datetime.fromisoformat(s.last_active)
+        except (ValueError, TypeError):
+            logger.debug("Skipping session %s — invalid last_active: %s", s.session_id, s.last_active)
+            continue
+
+        if last_active < cutoff:
+            logger.info("Idle timeout: stopping container %s for session %s (last active %s)",
+                        s.container_id, s.session_id, s.last_active)
+            try:
+                stop_container(s.container_id)
+            except Exception:
+                logger.warning("Failed to stop idle container %s", s.container_id, exc_info=True)
+            clear_container(s.session_id)
+            logger.info("Cleared container_id for idle session %s", s.session_id)

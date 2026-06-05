@@ -16,9 +16,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
 
     async with _lock:
-        if session_id not in _connections:
-            _connections[session_id] = []
-        _connections[session_id].append(websocket)
+        # Close any existing connections for this session to prevent duplicate messages
+        old_conns = _connections.get(session_id, [])
+        for old in old_conns:
+            try:
+                await old.close(code=1001, reason="Replaced by newer connection")
+            except Exception:
+                pass
+        _connections[session_id] = [websocket]
 
     try:
         # Keep the connection alive, receive client messages (e.g., pings)

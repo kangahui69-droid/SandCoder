@@ -1,0 +1,81 @@
+import uuid
+from datetime import datetime
+from typing import Optional
+from .database import get_connection
+from .models import Session, Message
+
+
+def create_session() -> Session:
+    session_id = str(uuid.uuid4())[:8]
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO sessions (session_id) VALUES (?)", (session_id,)
+        )
+    return Session(session_id=session_id)
+
+
+def get_session(session_id: str) -> Optional[Session]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    return Session(**dict(row))
+
+
+def list_sessions() -> list[Session]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions ORDER BY last_active DESC"
+        ).fetchall()
+    return [Session(**dict(r)) for r in rows]
+
+
+def delete_session(session_id: str):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+
+def update_container(session_id: str, container_id: str):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE sessions SET container_id = ?, last_active = ? WHERE session_id = ?",
+            (container_id, datetime.utcnow().isoformat(), session_id),
+        )
+
+
+def touch_session(session_id: str):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE sessions SET last_active = ? WHERE session_id = ?",
+            (datetime.utcnow().isoformat(), session_id),
+        )
+
+
+def add_message(session_id: str, role: str, content: str, msg_type: str = "text") -> Message:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO messages (session_id, role, content, type) VALUES (?, ?, ?, ?)",
+            (session_id, role, content, msg_type),
+        )
+        conn.execute(
+            "UPDATE sessions SET last_active = ? WHERE session_id = ?",
+            (datetime.utcnow().isoformat(), session_id),
+        )
+    return Message(
+        id=cursor.lastrowid,
+        session_id=session_id,
+        role=role,
+        content=content,
+        type=msg_type,
+    )
+
+
+def get_messages(session_id: str) -> list[Message]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC",
+            (session_id,),
+        ).fetchall()
+    return [Message(**dict(r)) for r in rows]

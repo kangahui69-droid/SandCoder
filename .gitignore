@@ -16,7 +16,7 @@ venv/
 Thumbs.db
 
 # Project
-data.db
+data.db*
 sessions/*
 !sessions/.gitkeep
 

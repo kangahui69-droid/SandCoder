@@ -1,12 +1,12 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 from .database import get_connection
 from .models import Session, Message
 
 
 def create_session() -> Session:
-    session_id = str(uuid.uuid4())[:8]
+    session_id = str(uuid.uuid4())
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO sessions (session_id) VALUES (?)", (session_id,)
@@ -41,7 +41,7 @@ def update_container(session_id: str, container_id: str):
     with get_connection() as conn:
         conn.execute(
             "UPDATE sessions SET container_id = ?, last_active = ? WHERE session_id = ?",
-            (container_id, datetime.utcnow().isoformat(), session_id),
+            (container_id, datetime.now(UTC).isoformat(), session_id),
         )
 
 
@@ -49,22 +49,24 @@ def touch_session(session_id: str):
     with get_connection() as conn:
         conn.execute(
             "UPDATE sessions SET last_active = ? WHERE session_id = ?",
-            (datetime.utcnow().isoformat(), session_id),
+            (datetime.now(UTC).isoformat(), session_id),
         )
 
 
 def add_message(session_id: str, role: str, content: str, msg_type: str = "text") -> Message:
     with get_connection() as conn:
+        conn.execute("BEGIN")
         cursor = conn.execute(
             "INSERT INTO messages (session_id, role, content, type) VALUES (?, ?, ?, ?)",
             (session_id, role, content, msg_type),
         )
+        msg_id = cursor.lastrowid
         conn.execute(
             "UPDATE sessions SET last_active = ? WHERE session_id = ?",
-            (datetime.utcnow().isoformat(), session_id),
+            (datetime.now(UTC).isoformat(), session_id),
         )
     return Message(
-        id=cursor.lastrowid,
+        id=msg_id,
         session_id=session_id,
         role=role,
         content=content,

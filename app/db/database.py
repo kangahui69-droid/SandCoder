@@ -1,6 +1,5 @@
 import sqlite3
 import os
-from contextlib import contextmanager
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data.db")
 
@@ -33,4 +32,6 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
             );
+
+            CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         """)

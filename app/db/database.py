@@ -18,6 +18,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT PRIMARY KEY,
                 container_id TEXT,
+                name TEXT DEFAULT 'New Session',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
                 status TEXT DEFAULT 'active'
@@ -35,3 +36,14 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         """)
+    # Migration: add name column to existing databases
+    migrate_add_name_column()
+
+
+def migrate_add_name_column():
+    """Add name column if missing (for databases created before this feature)."""
+    with get_connection() as conn:
+        cur = conn.execute("PRAGMA table_info(sessions)")
+        columns = [row[1] for row in cur.fetchall()]
+        if "name" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN name TEXT DEFAULT 'New Session'")

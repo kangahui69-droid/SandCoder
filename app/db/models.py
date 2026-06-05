@@ -6,6 +6,7 @@ from typing import Optional
 class Session:
     session_id: str
     container_id: Optional[str] = None
+    name: str = "New Session"
     created_at: Optional[str] = None
     last_active: Optional[str] = None
     status: str = "active"

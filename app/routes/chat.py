@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart, TextPart
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, AgentRunError
 from app.db.repository import get_session, get_messages, add_message, touch_session, update_container
 from app.sandbox.manager import create_container, get_container
 from app.agent.agent import run_agent
@@ -58,7 +59,27 @@ async def send_message(
 
     # Run agent with conversation history
     full_prompt = prompt + file_info
-    reply = await run_agent(session.container_id, full_prompt, session_id, message_history=history)
+    try:
+        reply = await run_agent(session.container_id, full_prompt, session_id, message_history=history)
+    except ModelHTTPError as e:
+        logger.error(f"DeepSeek API error (HTTP {e.status_code}): {e.body}")
+        if e.status_code == 429:
+            reply = "API 请求过于频繁，请稍等片刻后再试。"
+        elif e.status_code == 401 or e.status_code == 403:
+            reply = "API 密钥无效或已过期，请联系管理员检查 DeepSeek API Key。"
+        elif e.status_code and e.status_code >= 500:
+            reply = "DeepSeek 服务暂时不可用，请稍后重试。"
+        else:
+            reply = f"AI 服务请求失败 (HTTP {e.status_code})，请稍后重试。"
+    except UnexpectedModelBehavior as e:
+        logger.error(f"Unexpected model behavior: {e}")
+        reply = "AI 返回了意外响应，请重试或简化您的问题。"
+    except AgentRunError as e:
+        logger.error(f"Agent run error: {e}")
+        reply = "AI 执行过程中出现错误，请重试。"
+    except Exception as e:
+        logger.error(f"Unexpected error during agent run: {e}", exc_info=True)
+        reply = "系统内部错误，请稍后重试。"
 
     # Save assistant message
     add_message(session_id, "assistant", reply)

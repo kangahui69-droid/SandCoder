@@ -1,3 +1,7 @@
+import logging
+import pathlib
+import shutil
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.db.repository import (
@@ -5,6 +9,8 @@ from app.db.repository import (
     delete_session, get_messages, update_session_name,
 )
 from app.db.models import Session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -87,3 +93,12 @@ def remove_session(session_id: str):
     if session.container_id:
         stop_container(session.container_id)
     delete_session(session_id)
+
+    # Clean up workspace directory
+    workspace = pathlib.Path(__file__).parents[2] / "sessions" / session_id
+    if workspace.exists():
+        try:
+            shutil.rmtree(workspace)
+            logger.info("Removed workspace: %s", workspace)
+        except OSError as e:
+            logger.warning("Failed to remove workspace %s: %s", workspace, e)

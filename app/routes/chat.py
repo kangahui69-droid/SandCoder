@@ -1,9 +1,12 @@
+import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-from app.db.repository import get_session, add_message, touch_session
+from app.db.repository import get_session, add_message, touch_session, update_container
 from app.sandbox.manager import create_container, get_container
-from app.db.repository import update_container
 from app.agent.agent import run_agent
+from app.sandbox.executor import write_file as sandbox_write
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -31,11 +34,13 @@ async def send_message(
 
     # Save uploaded file to sandbox workspace
     file_info = ""
-    if file and session.container_id:
-        from app.sandbox.executor import write_file
+    if file and file.filename and session.container_id:
         content = await file.read()
         text = content.decode("utf-8", errors="replace")
-        write_file(session.container_id, file.filename, text)
+        try:
+            sandbox_write(session.container_id, file.filename, text)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid filename: {e}")
         file_info = f"\n\n[Uploaded file: {file.filename} is available in the workspace]"
 
     # Save user message

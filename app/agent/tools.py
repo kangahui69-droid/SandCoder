@@ -26,16 +26,12 @@ async def tool_execute_code(code: str) -> str:
 
 
 async def tool_read_file(path: str) -> str:
-    """Read a file from the sandbox workspace."""
-    if not path.startswith("/"):
-        path = f"/home/sandbox/workspace/{path}"
+    """Read a file from the sandbox workspace. Path is resolved safely by the executor."""
     return await run_in_thread(read_file, _container_id, path)
 
 
 async def tool_write_file(path: str, content: str) -> str:
-    """Write content to a file in the sandbox workspace."""
-    if not path.startswith("/"):
-        path = f"/home/sandbox/workspace/{path}"
+    """Write content to a file in the sandbox workspace. Path is resolved safely by the executor."""
     return await run_in_thread(write_file, _container_id, path, content)
 
 

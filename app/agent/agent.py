@@ -54,4 +54,4 @@ async def run_agent(container_id: str, user_prompt: str) -> str:
     set_container(container_id)
     agent = get_agent()
     result = await agent.run(user_prompt)
-    return result.data
+    return result.output

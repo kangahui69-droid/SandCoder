@@ -64,7 +64,7 @@ def write_file(container_id: str, path: str, content: str) -> str:
     _check_container(container_id)
     safe = _safe_path(path)
     result = subprocess.run(
-        ["docker", "exec", "--user", "sandbox", container_id, "tee", safe],
+        ["docker", "exec", "-i", "--user", "sandbox", container_id, "tee", safe],
         input=content, capture_output=True, text=True, timeout=10,
     )
     if result.returncode != 0:

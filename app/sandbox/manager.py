@@ -77,26 +77,31 @@ def get_container(container_id: str) -> Optional[docker.models.containers.Contai
 
 
 def stop_container(container_id: str):
-    """Stop and remove a container."""
+    """Stop and remove a container. Containers use auto-remove, so stop() is sufficient."""
     client = get_client()
     try:
         logger.info("Stopping container: %s", container_id)
         container = client.containers.get(container_id)
         container.stop(timeout=5)
-        container.remove()
-        logger.info("Container stopped and removed: %s", container_id)
+        logger.info("Container stopped: %s", container_id)
     except docker.errors.NotFound:
         logger.warning("Container not found (already removed?): %s", container_id)
+    except docker.errors.APIError as exc:
+        if exc.status_code == 409:
+            logger.debug("Container %s already being removed", container_id)
+        else:
+            raise
 
 
 def cleanup_stale(active_ids: set[str]):
-    """Remove containers not in the active set."""
+    """Remove containers not in the active set. Containers use auto-remove."""
     client = get_client()
     for container in client.containers.list(filters={"ancestor": SANDBOX_IMAGE}):
         if container.id not in active_ids:
             try:
                 logger.info("Cleaning up stale container: %s", container.id)
                 container.stop(timeout=5)
-                container.remove()
+            except docker.errors.NotFound:
+                pass
             except Exception as exc:
                 logger.warning("Failed to clean up stale container %s: %s", container.id, exc)

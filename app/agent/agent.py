@@ -1,6 +1,7 @@
 import os
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.openai import OpenAIChatModel
 from .tools import (
     tool_execute_code, tool_read_file, tool_write_file, tool_install_package,
     set_container,
@@ -26,10 +27,16 @@ Always write complete, working Python code. Don't ask for confirmation — just 
 
 def create_agent() -> Agent:
     """Create a Pydantic AI agent with sandbox tools."""
-    model = OpenAIModel(
-        model_name="deepseek-chat",
-        base_url="https://api.deepseek.com/v1",
-        api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("DEEPSEEK_API_KEY environment variable is not set")
+
+    model = OpenAIChatModel(
+        "deepseek-chat",
+        provider=OpenAIProvider(
+            base_url="https://api.deepseek.com/v1",
+            api_key=api_key,
+        ),
     )
 
     return Agent(

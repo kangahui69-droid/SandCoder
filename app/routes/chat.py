@@ -1,7 +1,8 @@
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-from app.db.repository import get_session, add_message, touch_session, update_container
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart, TextPart
+from app.db.repository import get_session, get_messages, add_message, touch_session, update_container
 from app.sandbox.manager import create_container, get_container
 from app.agent.agent import run_agent
 from app.sandbox.executor import write_file as sandbox_write
@@ -43,12 +44,21 @@ async def send_message(
             raise HTTPException(status_code=400, detail=f"Invalid filename: {e}")
         file_info = f"\n\n[Uploaded file: {file.filename} is available in the workspace]"
 
+    # Load conversation history before saving current message
+    prior_messages = get_messages(session_id)
+    history: list[ModelMessage] = []
+    for msg in prior_messages:
+        if msg.role == "user":
+            history.append(ModelRequest(parts=[UserPromptPart(msg.content)]))
+        elif msg.role == "assistant":
+            history.append(ModelResponse(parts=[TextPart(msg.content)]))
+
     # Save user message
     add_message(session_id, "user", prompt + file_info)
 
-    # Run agent
+    # Run agent with conversation history
     full_prompt = prompt + file_info
-    reply = await run_agent(session.container_id, full_prompt, session_id)
+    reply = await run_agent(session.container_id, full_prompt, session_id, message_history=history)
 
     # Save assistant message
     add_message(session_id, "assistant", reply)

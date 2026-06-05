@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SandCoder</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <h1>SandCoder</h1>
+        <button class="btn btn-primary" id="btn-new-session">+ New Session</button>
+        <nav id="session-list" aria-label="Sessions"></nav>
+    </aside>
+
+    <main class="main">
+        <div class="messages" id="messages" role="log" aria-live="polite"></div>
+        <div class="input-area">
+            <label class="file-label" title="Attach file" aria-label="Attach file">📎
+                <input type="file" id="file-input">
+            </label>
+            <span id="file-name" class="file-name"></span>
+            <textarea id="prompt" placeholder="Ask me to analyze data, write code..." rows="1"></textarea>
+            <button class="btn btn-primary" id="btn-send" aria-label="Send message">Send</button>
+        </div>
+    </main>
+
+    <script>
+        let currentSession = null;
+        let ws = null;
+        let switchController = null;
+
+        // ---- Helpers ----
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function apiUrl(path) {
+            return '/api' + path;
+        }
+
+        async function apiFetch(path, options = {}) {
+            const res = await fetch(apiUrl(path), options);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: res.statusText }));
+                throw new Error(err.detail || 'Request failed');
+            }
+            if (res.status === 204) return null;
+            return res.json();
+        }
+
+        function wsUrl(path) {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return proto + '//' + location.host + '/api' + path;
+        }
+
+        // ---- Session Sidebar ----
+
+        async function loadSessions() {
+            let sessions = [];
+            try {
+                sessions = await apiFetch('/sessions');
+            } catch (e) {
+                console.error('Failed to load sessions:', e);
+            }
+            const list = document.getElementById('session-list');
+            list.innerHTML = '';
+            sessions.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'session-item' + (s.session_id === currentSession ? ' active' : '');
+                item.setAttribute('role', 'button');
+                item.setAttribute('tabindex', '0');
+                item.setAttribute('aria-label', 'Session ' + s.session_id);
+
+                const span = document.createElement('span');
+                span.textContent = s.session_id;
+                item.appendChild(span);
+
+                const del = document.createElement('span');
+                del.className = 'delete';
+                del.textContent = '×';
+                del.setAttribute('role', 'button');
+                del.setAttribute('tabindex', '0');
+                del.setAttribute('aria-label', 'Delete session ' + s.session_id);
+                del.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteSession(s.session_id);
+                });
+                del.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteSession(s.session_id);
+                    }
+                });
+                item.appendChild(del);
+
+                item.addEventListener('click', () => switchSession(s.session_id));
+                item.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        switchSession(s.session_id);
+                    }
+                });
+                list.appendChild(item);
+            });
+        }
+
+        async function newSession() {
+            try {
+                const s = await apiFetch('/sessions', { method: 'POST' });
+                currentSession = s.session_id;
+                document.getElementById('messages').innerHTML = '';
+                connectWS();
+                loadSessions();
+            } catch (e) {
+                alert('Failed to create session: ' + e.message);
+            }
+        }
+
+        async function switchSession(id) {
+            // Cancel any in-flight switch
+            if (switchController) switchController.abort();
+            switchController = new AbortController();
+            const signal = switchController.signal;
+
+            const prevId = id;
+            currentSession = id;
+            document.getElementById('messages').innerHTML = '';
+            connectWS();
+            loadSessions();
+
+            try {
+                const data = await apiFetch('/sessions/' + id, { signal });
+                // Only render if still on the same session
+                if (currentSession === prevId) {
+                    data.messages.forEach(m => addMessage(m.role, m.content, m.type));
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                console.error('Failed to load session:', e);
+                addMessage('log', 'Failed to load messages: ' + e.message, 'log');
+            }
+        }
+
+        async function deleteSession(id) {
+            try {
+                await apiFetch('/sessions/' + id, { method: 'DELETE' });
+            } catch (e) {
+                console.error('Failed to delete session:', e);
+            }
+            if (currentSession === id) {
+                currentSession = null;
+                document.getElementById('messages').innerHTML = '';
+                if (ws) { ws.close(); ws = null; }
+            }
+            loadSessions();
+        }
+
+        // ---- WebSocket ----
+
+        let wsReconnectTimer = null;
+
+        function connectWS() {
+            if (ws) { ws.close(); ws = null; }
+            if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+            if (!currentSession) return;
+
+            try {
+                ws = new WebSocket(wsUrl('/sessions/' + currentSession + '/ws'));
+            } catch (e) {
+                console.error('WebSocket creation failed:', e);
+                scheduleReconnect();
+                return;
+            }
+
+            ws.onmessage = (e) => {
+                let msg;
+                try {
+                    msg = JSON.parse(e.data);
+                } catch {
+                    return;
+                }
+                if (msg.type === 'log') {
+                    addMessage('log', msg.content, 'log');
+                } else if (msg.type === 'progress') {
+                    addMessage('log', '[' + msg.status + '] ' + JSON.stringify(msg.data), 'log');
+                }
+            };
+
+            ws.onerror = () => {
+                console.error('WebSocket error for session', currentSession);
+            };
+
+            ws.onclose = () => {
+                ws = null;
+                if (currentSession) {
+                    wsReconnectTimer = setTimeout(connectWS, 3000);
+                }
+            };
+        }
+
+        function scheduleReconnect() {
+            if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+            if (currentSession) {
+                wsReconnectTimer = setTimeout(connectWS, 3000);
+            }
+        }
+
+        // ---- Messages ----
+
+        function addMessage(role, content, type) {
+            const div = document.createElement('div');
+            div.className = 'message ' + role;
+            div.textContent = content;
+            document.getElementById('messages').appendChild(div);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+
+        // ---- Send Message ----
+
+        async function sendMessage() {
+            const promptEl = document.getElementById('prompt');
+            const fileInput = document.getElementById('file-input');
+            const prompt = promptEl.value.trim();
+            if (!prompt && !fileInput.files.length) return;
+
+            if (!currentSession) {
+                try {
+                    const s = await apiFetch('/sessions', { method: 'POST' });
+                    currentSession = s.session_id;
+                    connectWS();
+                    loadSessions();
+                } catch (e) {
+                    alert('Failed to create session: ' + e.message);
+                    return;
+                }
+            }
+
+            promptEl.value = '';
+            addMessage('user', prompt || '[File upload]', 'user');
+
+            const form = new FormData();
+            form.append('prompt', prompt);
+            if (fileInput.files.length) {
+                form.append('file', fileInput.files[0]);
+                fileInput.value = '';
+                document.getElementById('file-name').textContent = '';
+            }
+
+            try {
+                const data = await apiFetch('/sessions/' + currentSession + '/chat', {
+                    method: 'POST',
+                    body: form,
+                });
+                addMessage('assistant', data.reply, 'assistant');
+            } catch (e) {
+                addMessage('log', 'Error: ' + e.message, 'log');
+            }
+        }
+
+        // ---- File Input ----
+
+        document.getElementById('file-input').addEventListener('change', function (e) {
+            const name = e.target.files.length ? e.target.files[0].name : '';
+            document.getElementById('file-name').textContent = name;
+        });
+
+        // ---- Event Bindings ----
+
+        document.getElementById('btn-new-session').addEventListener('click', newSession);
+
+        document.getElementById('btn-send').addEventListener('click', sendMessage);
+
+        document.getElementById('prompt').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        document.getElementById('prompt').addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        });
+
+        // ---- Init ----
+        loadSessions();
+    </script>
+</body>
+</html>

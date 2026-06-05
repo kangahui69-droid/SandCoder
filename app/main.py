@@ -1,6 +1,11 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,15 +15,39 @@ from app.routes.session import router as session_router
 from app.routes.chat import router as chat_router
 from app.routes.ws import router as ws_router
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    logger.info("Starting SandCoder...")
     init_db()
+    logger.info("Database initialized")
+
+    # Pre-flight checks
+    _startup_checks()
+
+    # Ensure sandbox Docker image exists
+    from app.sandbox.manager import build_image
+    try:
+        build_image()
+    except Exception:
+        logger.warning("Failed to build sandbox image — containers will fail to start")
+
+    # Initialize thread pool executor
+    from app.agent.tools import init_executor
+    init_executor()
+
+    logger.info("SandCoder ready")
     yield
     # Shutdown: cleanup executor and Docker containers
+    logger.info("Shutting down...")
     from app.agent.tools import shutdown_executor
     from app.sandbox.manager import stop_container
     for s in list_sessions():
@@ -28,6 +57,20 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.warning("Failed to stop container %s on shutdown", s.container_id)
     shutdown_executor()
+    logger.info("Shutdown complete")
+
+
+def _startup_checks():
+    """Warn about missing dependencies without crashing."""
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        logger.warning("DEEPSEEK_API_KEY is not set — agent will fail on first chat request")
+
+    try:
+        import docker
+        docker.from_env().ping()
+        logger.info("Docker is available")
+    except Exception:
+        logger.warning("Docker is not available — sandbox containers cannot be created")
 
 
 app = FastAPI(title="SandCoder", version="0.1.0", lifespan=lifespan)

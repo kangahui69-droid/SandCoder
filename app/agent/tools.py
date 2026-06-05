@@ -3,8 +3,23 @@ import contextvars
 from concurrent.futures import ThreadPoolExecutor
 from app.sandbox.executor import execute_code, read_file, write_file, install_package
 
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor: ThreadPoolExecutor | None = None
 _container_id: contextvars.ContextVar[str] = contextvars.ContextVar("container_id", default="")
+
+
+def init_executor():
+    """Initialize the thread pool executor. Called during app startup."""
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=4)
+
+
+def get_executor() -> ThreadPoolExecutor:
+    """Get the executor, initializing it lazily if needed."""
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=4)
+    return _executor
 
 
 def set_container(container_id: str):
@@ -14,12 +29,15 @@ def set_container(container_id: str):
 
 def shutdown_executor():
     """Shutdown the thread pool executor. Call during app teardown."""
-    _executor.shutdown(wait=True)
+    global _executor
+    if _executor is not None:
+        _executor.shutdown(wait=True)
+        _executor = None
 
 
 async def run_in_thread(func, *args):
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, func, *args)
+    return await loop.run_in_executor(get_executor(), func, *args)
 
 
 async def tool_execute_code(code: str) -> str:

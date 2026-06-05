@@ -9,9 +9,10 @@ def create_session() -> Session:
     session_id = str(uuid.uuid4())
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO sessions (session_id) VALUES (?)", (session_id,)
+            "INSERT INTO sessions (session_id, name) VALUES (?, ?)",
+            (session_id, "New Session"),
         )
-    return Session(session_id=session_id)
+    return Session(session_id=session_id, name="New Session")
 
 
 def get_session(session_id: str) -> Optional[Session]:
@@ -45,6 +46,15 @@ def update_container(session_id: str, container_id: str):
         )
 
 
+def update_session_name(session_id: str, name: str):
+    """Update the display name of a session."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE sessions SET name = ? WHERE session_id = ?",
+            (name, session_id),
+        )
+
+
 def touch_session(session_id: str):
     with get_connection() as conn:
         conn.execute(
@@ -65,6 +75,17 @@ def add_message(session_id: str, role: str, content: str, msg_type: str = "text"
             "UPDATE sessions SET last_active = ? WHERE session_id = ?",
             (datetime.now(UTC).isoformat(), session_id),
         )
+        # Auto-name from first user message
+        if role == "user" and content.strip():
+            row = conn.execute(
+                "SELECT name FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+            if row and row["name"] == "New Session":
+                name = content.strip()[:40]
+                conn.execute(
+                    "UPDATE sessions SET name = ? WHERE session_id = ?",
+                    (name, session_id),
+                )
     return Message(
         id=msg_id,
         session_id=session_id,

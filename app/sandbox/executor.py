@@ -37,7 +37,7 @@ def execute_code(container_id: str, code: str) -> tuple[str, str, int]:
                 container_id,
                 "python", "-c", code,
             ],
-            capture_output=True, text=True, timeout=EXEC_TIMEOUT,
+            capture_output=True, encoding="utf-8", errors="replace", timeout=EXEC_TIMEOUT,
         )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
@@ -51,7 +51,7 @@ def read_file(container_id: str, path: str) -> str:
     safe = _safe_path(path)
     result = subprocess.run(
         ["docker", "exec", "--user", "sandbox", container_id, "cat", safe],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True, encoding="utf-8", errors="replace", timeout=10,
     )
     if result.returncode != 0:
         logger.error("Error reading file %s: %s", safe, result.stderr)
@@ -65,7 +65,7 @@ def write_file(container_id: str, path: str, content: str) -> str:
     safe = _safe_path(path)
     result = subprocess.run(
         ["docker", "exec", "-i", "--user", "sandbox", container_id, "tee", safe],
-        input=content, capture_output=True, text=True, timeout=10,
+        input=content, capture_output=True, encoding="utf-8", errors="replace", timeout=10,
     )
     if result.returncode != 0:
         logger.error("Error writing file %s: %s", safe, result.stderr)
@@ -79,7 +79,7 @@ def install_package(container_id: str, package_name: str) -> str:
     result = subprocess.run(
         ["docker", "exec", "--user", "root", container_id,
          "pip", "install", "--", package_name],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if result.returncode != 0:
         logger.error("Failed to install package %s: %s", package_name, result.stderr)

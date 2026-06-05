@@ -61,3 +61,45 @@ class TestSessionNaming:
         add_message(session.session_id, "user", "   ")
         reloaded = get_session(session.session_id)
         assert reloaded.name == "New Session"
+
+
+class TestSessionNamingAPI:
+    def test_patch_session_name(self, client):
+        r = client.post("/api/sessions")
+        session_id = r.json()["session_id"]
+        assert r.json()["name"] == "New Session"
+
+        r2 = client.patch(f"/api/sessions/{session_id}", json={"name": "My Task"})
+        assert r2.status_code == 200
+        assert r2.json()["name"] == "My Task"
+
+    def test_patch_session_not_found(self, client):
+        r = client.patch("/api/sessions/nonexistent", json={"name": "Test"})
+        assert r.status_code == 404
+
+    def test_patch_session_empty_name(self, client):
+        r = client.post("/api/sessions")
+        session_id = r.json()["session_id"]
+        r2 = client.patch(f"/api/sessions/{session_id}", json={"name": ""})
+        assert r2.status_code == 200
+        assert r2.json()["name"] == ""
+
+    def test_session_list_includes_name(self, client):
+        client.post("/api/sessions")
+        r = client.get("/api/sessions")
+        sessions = r.json()
+        assert len(sessions) >= 1
+        assert "name" in sessions[0]
+
+    def test_create_session_has_name_in_response(self, client):
+        r = client.post("/api/sessions")
+        data = r.json()
+        assert "name" in data
+        assert data["name"] == "New Session"
+
+    def test_session_detail_includes_name(self, client):
+        r = client.post("/api/sessions")
+        session_id = r.json()["session_id"]
+        r2 = client.get(f"/api/sessions/{session_id}")
+        assert r2.status_code == 200
+        assert r2.json()["session"]["name"] == "New Session"

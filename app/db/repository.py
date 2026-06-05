@@ -81,7 +81,12 @@ def add_message(session_id: str, role: str, content: str, msg_type: str = "text"
                 "SELECT name FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
             if row and row["name"] == "New Session":
-                name = content.strip()[:40]
+                # Normalize whitespace, then truncate at last word boundary within 40 chars
+                line = content.strip().replace('\n', ' ').replace('\r', ' ')
+                line = ' '.join(line.split())
+                name = line[:40]
+                if len(line) > 40 and name.rfind(' ') > 0:
+                    name = name[:name.rfind(' ')]
                 conn.execute(
                     "UPDATE sessions SET name = ? WHERE session_id = ?",
                     (name, session_id),

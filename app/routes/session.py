@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.db.repository import (
     create_session, list_sessions, get_session,
-    delete_session, get_messages,
+    delete_session, get_messages, update_session_name,
 )
 from app.db.models import Session
 
@@ -12,6 +12,7 @@ router = APIRouter()
 class SessionResponse(BaseModel):
     session_id: str
     container_id: str | None = None
+    name: str = "New Session"
     created_at: str | None = None
     last_active: str | None = None
     status: str = "active"
@@ -28,6 +29,10 @@ class MessageResponse(BaseModel):
 class SessionDetailResponse(BaseModel):
     session: SessionResponse
     messages: list[MessageResponse]
+
+
+class RenameRequest(BaseModel):
+    name: str
 
 
 @router.post("/sessions", response_model=SessionResponse, status_code=201)
@@ -61,6 +66,16 @@ def get_session_detail(session_id: str):
             for m in messages
         ],
     )
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionResponse)
+def rename_session(session_id: str, body: RenameRequest):
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    update_session_name(session_id, body.name)
+    session.name = body.name
+    return SessionResponse(**session.__dict__)
 
 
 @router.delete("/sessions/{session_id}", status_code=204)

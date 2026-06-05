@@ -193,6 +193,23 @@ body {
 .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .messages::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
+/* Session rename */
+.rename-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.session-name {
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-name:hover {
+    color: var(--accent);
+}
+
 /* Responsive */
 @media (max-width: 640px) {
     body { flex-direction: column; }

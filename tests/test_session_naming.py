@@ -15,7 +15,7 @@ class TestSessionNaming:
         reloaded = get_session(session.session_id)
         assert reloaded.name == "Data Analysis Task"
 
-    def test_update_session_name_rejects_empty(self):
+    def test_update_session_name_allows_empty_at_repo_level(self):
         session = create_session()
         update_session_name(session.session_id, "")
         reloaded = get_session(session.session_id)
@@ -81,8 +81,21 @@ class TestSessionNamingAPI:
         r = client.post("/api/sessions")
         session_id = r.json()["session_id"]
         r2 = client.patch(f"/api/sessions/{session_id}", json={"name": ""})
+        assert r2.status_code == 422
+
+    def test_patch_session_name_too_long(self, client):
+        r = client.post("/api/sessions")
+        session_id = r.json()["session_id"]
+        r2 = client.patch(f"/api/sessions/{session_id}", json={"name": "A" * 201})
+        assert r2.status_code == 422
+
+    def test_patch_session_name_max_length(self, client):
+        r = client.post("/api/sessions")
+        session_id = r.json()["session_id"]
+        name_200 = "A" * 200
+        r2 = client.patch(f"/api/sessions/{session_id}", json={"name": name_200})
         assert r2.status_code == 200
-        assert r2.json()["name"] == ""
+        assert r2.json()["name"] == name_200
 
     def test_session_list_includes_name(self, client):
         client.post("/api/sessions")

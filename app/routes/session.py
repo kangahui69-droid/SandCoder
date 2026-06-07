@@ -3,7 +3,7 @@ import pathlib
 import shutil
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.db.repository import (
     create_session, list_sessions, get_session,
     delete_session, get_messages, update_session_name,
@@ -38,7 +38,7 @@ class SessionDetailResponse(BaseModel):
 
 
 class RenameRequest(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=200)
 
 
 @router.post("/sessions", response_model=SessionResponse, status_code=201)

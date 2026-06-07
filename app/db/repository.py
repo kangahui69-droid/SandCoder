@@ -109,10 +109,14 @@ def add_message(session_id: str, role: str, content: str, msg_type: str = "text"
     )
 
 
-def get_messages(session_id: str) -> list[Message]:
+def get_messages(session_id: str, limit: int = 50) -> list[Message]:
+    """Return the most recent messages for a session, ordered chronologically (oldest first)."""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC",
-            (session_id,),
+            """SELECT * FROM (
+                SELECT * FROM messages WHERE session_id = ?
+                ORDER BY id DESC LIMIT ?
+            ) ORDER BY id ASC""",
+            (session_id, limit),
         ).fetchall()
     return [Message(**dict(r)) for r in rows]

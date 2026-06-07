@@ -1,10 +1,23 @@
 import logging
 import os as _os
+import re
 import subprocess
 
 EXEC_TIMEOUT = 30  # seconds
 
+_PACKAGE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
+_MAX_PACKAGE_NAME_LEN = 128
+
 logger = logging.getLogger(__name__)
+
+
+def _validate_package_name(name: str) -> None:
+    if not name or not name.strip():
+        raise ValueError("package_name must be a non-empty string")
+    if len(name) > _MAX_PACKAGE_NAME_LEN:
+        raise ValueError(f"package_name too long: {len(name)} chars")
+    if not _PACKAGE_NAME_RE.match(name):
+        raise ValueError(f"Invalid package name: {name}")
 
 
 def _check_container(container_id: str) -> None:
@@ -76,9 +89,10 @@ def write_file(container_id: str, path: str, content: str) -> str:
 def install_package(container_id: str, package_name: str) -> str:
     """Install a pip package in the sandbox container."""
     _check_container(container_id)
+    _validate_package_name(package_name)
     result = subprocess.run(
-        ["docker", "exec", "--user", "root", container_id,
-         "pip", "install", "--", package_name],
+        ["docker", "exec", "--user", "sandbox", container_id,
+         "pip", "install", "--user", "--", package_name],
         capture_output=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if result.returncode != 0:

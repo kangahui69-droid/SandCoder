@@ -52,6 +52,14 @@ body {
 
 .btn-primary:hover { opacity: 0.85; }
 
+.btn-stop {
+    background: #dc3545;
+    color: white;
+    border-color: #dc3545;
+}
+
+.btn-stop:hover { opacity: 0.85; }
+
 .btn-secondary {
     background: transparent;
     color: var(--text);

@@ -29,6 +29,7 @@
         let currentSession = null;
         let ws = null;
         let switchController = null;
+        let chatController = null;
 
         // ---- Helpers ----
 
@@ -63,13 +64,41 @@
         }
 
         async function apiFetch(path, options = {}) {
-            const res = await fetch(apiUrl(path), options);
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: res.statusText }));
-                throw new Error(err.detail || 'Request failed');
+            const isChat = path.includes('/chat');
+            const timeoutMs = options.timeout || (isChat ? 120000 : 10000);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+            const existingSignal = options.signal;
+            if (existingSignal) {
+                existingSignal.addEventListener('abort', () => controller.abort());
             }
-            if (res.status === 204) return null;
-            return res.json();
+
+            const headers = { ...(options.headers || {}) };
+            if (window.SANDCODER_API_KEY) {
+                headers['X-API-Key'] = window.SANDCODER_API_KEY;
+            }
+
+            try {
+                const res = await fetch(apiUrl(path), {
+                    ...options,
+                    headers,
+                    signal: controller.signal,
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }));
+                    throw new Error(err.detail || 'Request failed');
+                }
+                if (res.status === 204) return null;
+                return res.json();
+            } catch (e) {
+                if (e.name === 'AbortError' && !existingSignal?.aborted) {
+                    throw new Error('Request timed out');
+                }
+                throw e;
+            } finally {
+                clearTimeout(timeoutId);
+            }
         }
 
         function wsUrl(path) {
@@ -296,9 +325,17 @@
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         }
 
-        function setInputEnabled(enabled) {
-            document.getElementById('btn-send').disabled = !enabled;
-            document.getElementById('prompt').disabled = !enabled;
+        function setSending(isSending) {
+            const btn = document.getElementById('btn-send');
+            if (isSending) {
+                btn.textContent = 'Stop';
+                btn.className = 'btn btn-stop';
+                document.getElementById('prompt').disabled = true;
+            } else {
+                btn.textContent = 'Send';
+                btn.className = 'btn btn-primary';
+                document.getElementById('prompt').disabled = false;
+            }
         }
 
         function showLoading() {
@@ -316,7 +353,7 @@
             if (el) el.remove();
         }
 
-        // ---- Send Message ----
+        // ---- Send / Stop Message ----
 
         async function sendMessage() {
             const promptEl = document.getElementById('prompt');
@@ -339,7 +376,9 @@
             promptEl.value = '';
             addMessage('user', prompt || '[File upload]', 'user');
             showLoading();
-            setInputEnabled(false);
+            setSending(true);
+
+            chatController = new AbortController();
 
             const form = new FormData();
             form.append('prompt', prompt);
@@ -353,15 +392,28 @@
                 const data = await apiFetch('/sessions/' + currentSession + '/chat', {
                     method: 'POST',
                     body: form,
+                    signal: chatController.signal,
                 });
                 removeLoading();
                 addMessage('assistant', data.reply, 'assistant');
                 loadSessions();
             } catch (e) {
                 removeLoading();
-                addMessage('log', 'Error: ' + e.message, 'log');
+                if (e.name === 'AbortError') {
+                    addMessage('log', '[Generation stopped]', 'log');
+                } else {
+                    addMessage('log', 'Error: ' + e.message, 'log');
+                }
             } finally {
-                setInputEnabled(true);
+                chatController = null;
+                setSending(false);
+            }
+        }
+
+        function stopMessage() {
+            if (chatController) {
+                chatController.abort();
+                chatController = null;
             }
         }
 
@@ -376,12 +428,26 @@
 
         document.getElementById('btn-new-session').addEventListener('click', newSession);
 
-        document.getElementById('btn-send').addEventListener('click', sendMessage);
+        document.getElementById('btn-send').addEventListener('click', function () {
+            if (chatController) {
+                stopMessage();
+            } else {
+                sendMessage();
+            }
+        });
 
         document.getElementById('prompt').addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessage();
+                if (chatController) {
+                    stopMessage();
+                } else {
+                    sendMessage();
+                }
+            }
+            if (e.key === 'Escape' && chatController) {
+                e.preventDefault();
+                stopMessage();
             }
         });
 
